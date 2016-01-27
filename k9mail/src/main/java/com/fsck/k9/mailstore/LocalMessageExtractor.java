@@ -49,8 +49,6 @@ public class LocalMessageExtractor {
      * Extract the viewable textual parts of a message and return the rest as attachments.
      *
      * @param context A {@link android.content.Context} instance that will be used to get localized strings.
-     * @param viewables
-     * @param attachments
      * @return A {@link ViewableContainer} instance containing the textual parts of the message as
      *         plain text and HTML, and a list of message parts considered attachments.
      *
@@ -428,7 +426,7 @@ public class LocalMessageExtractor {
         List<Part> parts = getCryptPieces(message, annotations);
 
         // 2. extract viewables/attachments of parts
-        ArrayList<MessageViewContainer> containers = new ArrayList<MessageViewContainer>();
+        ArrayList<MessageViewContainer> containers = new ArrayList<>();
         for (Part part : parts) {
             OpenPgpResultAnnotation pgpAnnotation = annotations.get(part);
 
@@ -437,7 +435,7 @@ public class LocalMessageExtractor {
                 part = pgpAnnotation.getOutputData();
             }
 
-            ArrayList<Part> attachments = new ArrayList<Part>();
+            ArrayList<Part> attachments = new ArrayList<>();
             List<Viewable> viewables = MessageExtractor.getViewables(part, attachments);
 
             // 3. parse viewables into html string
@@ -465,7 +463,7 @@ public class LocalMessageExtractor {
          */
 
 
-        ArrayList<Part> parts = new ArrayList<Part>();
+        ArrayList<Part> parts = new ArrayList<>();
         if (!getCryptSubPieces(message, parts, annotations)) {
             parts.add(message);
         }
@@ -479,7 +477,7 @@ public class LocalMessageExtractor {
         Body body = part.getBody();
         if (body instanceof Multipart) {
             Multipart multi = (Multipart) body;
-            if ("multipart/mixed".equals(part.getMimeType())) {
+            if (MimeUtility.isSameMimeType(part.getMimeType(), "multipart/mixed")) {
                 boolean foundSome = false;
                 for (BodyPart sub : multi.getBodyParts()) {
                     foundSome |= getCryptSubPieces(sub, parts, annotations);
@@ -499,7 +497,7 @@ public class LocalMessageExtractor {
     private static List<AttachmentViewInfo> extractAttachmentInfos(Context context, List<Part> attachmentParts)
             throws MessagingException {
 
-        List<AttachmentViewInfo> attachments = new ArrayList<AttachmentViewInfo>();
+        List<AttachmentViewInfo> attachments = new ArrayList<>();
         for (Part part : attachmentParts) {
             attachments.add(extractAttachmentInfo(context, part));
         }

@@ -88,6 +88,7 @@ import com.fsck.k9.mail.Flag;
 import com.fsck.k9.mail.Folder;
 import com.fsck.k9.mail.Message;
 import com.fsck.k9.mail.MessagingException;
+import com.fsck.k9.mailstore.DatabasePreviewType;
 import com.fsck.k9.mailstore.LocalFolder;
 import com.fsck.k9.mailstore.LocalMessage;
 import com.fsck.k9.mailstore.LocalStore;
@@ -125,6 +126,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         MessageColumns.FORWARDED,
         MessageColumns.ATTACHMENT_COUNT,
         MessageColumns.FOLDER_ID,
+        MessageColumns.PREVIEW_TYPE,
         MessageColumns.PREVIEW,
         ThreadColumns.ROOT,
         SpecialColumns.ACCOUNT_UUID,
@@ -147,11 +149,12 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
     private static final int FORWARDED_COLUMN = 11;
     private static final int ATTACHMENT_COUNT_COLUMN = 12;
     private static final int FOLDER_ID_COLUMN = 13;
-    private static final int PREVIEW_COLUMN = 14;
-    private static final int THREAD_ROOT_COLUMN = 15;
-    private static final int ACCOUNT_UUID_COLUMN = 16;
-    private static final int FOLDER_NAME_COLUMN = 17;
-    private static final int THREAD_COUNT_COLUMN = 18;
+    private static final int PREVIEW_TYPE_COLUMN = 14;
+    private static final int PREVIEW_COLUMN = 15;
+    private static final int THREAD_ROOT_COLUMN = 16;
+    private static final int ACCOUNT_UUID_COLUMN = 17;
+    private static final int FOLDER_NAME_COLUMN = 18;
+    private static final int THREAD_COUNT_COLUMN = 19;
 
     private static final String[] PROJECTION = Arrays.copyOf(THREADED_PROJECTION,
             THREAD_COUNT_COLUMN);
@@ -645,6 +648,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         if (mCurrentFolder != null && mCurrentFolder.name.equals(folder)) {
             mCurrentFolder.loading = loading;
         }
+        updateMoreMessagesOfCurrentFolder();
         updateFooterView();
     }
 
@@ -727,7 +731,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
     @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
         if (view == mFooterView) {
-            if (mCurrentFolder != null && !mSearch.isManualSearch()) {
+            if (mCurrentFolder != null && !mSearch.isManualSearch() && mCurrentFolder.moreMessages) {
 
                 mController.loadMoreMessages(mAccount, mFolderName, null);
 
@@ -745,7 +749,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
                             mExtraSearchResults.size());
                 } else {
                     mExtraSearchResults = null;
-                    updateFooter("");
+                    updateFooter(null);
                 }
 
                 mController.loadSearchResults(mAccount, mCurrentFolder.name, toProcess, mListener);
@@ -951,7 +955,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         if (mSingleAccountMode && (mSearch.getFolderNames().size() == 1)) {
             mSingleFolderMode = true;
             mFolderName = mSearch.getFolderNames().get(0);
-            mCurrentFolder = getFolder(mFolderName, mAccount);
+            mCurrentFolder = getFolderInfoHolder(mFolderName, mAccount);
         }
 
         mAllAccounts = false;
@@ -983,7 +987,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         mAdapter = new MessageListAdapter();
 
         if (mFolderName != null) {
-            mCurrentFolder = getFolder(mFolderName, mAccount);
+            mCurrentFolder = getFolderInfoHolder(mFolderName, mAccount);
         }
 
         if (mSingleFolderMode) {
@@ -1007,20 +1011,20 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         mCacheIntentFilter = new IntentFilter(EmailProviderCache.ACTION_CACHE_UPDATED);
     }
 
-    private FolderInfoHolder getFolder(String folder, Account account) {
-        LocalFolder localFolder = null;
+    private FolderInfoHolder getFolderInfoHolder(String folderName, Account account) {
         try {
-            LocalStore localStore = account.getLocalStore();
-            localFolder = localStore.getFolder(folder);
+            LocalFolder localFolder = getFolder(folderName, account);
             return new FolderInfoHolder(mContext, localFolder, account);
-        } catch (Exception e) {
-            Log.e(K9.LOG_TAG, "getFolder(" + folder + ") goes boom: ", e);
-            return null;
-        } finally {
-            if (localFolder != null) {
-                localFolder.close();
-            }
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
         }
+    }
+
+    private LocalFolder getFolder(String folderName, Account account) throws MessagingException {
+        LocalStore localStore = account.getLocalStore();
+        LocalFolder localFolder = localStore.getFolder(folderName);
+        localFolder.open(Folder.OPEN_MODE_RO);
+        return localFolder;
     }
 
     private String getFolderNameById(Account account, long folderId) {
@@ -1090,7 +1094,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         }
 
         for (Account accountWithNotification : accountsWithNotification) {
-            mController.notifyAccountCancel(appContext, accountWithNotification);
+            mController.cancelNotificationsForAccount(accountWithNotification);
         }
 
         if (mAccount != null && mFolderName != null && !mSearch.isManualSearch()) {
@@ -1729,7 +1733,7 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
             if (extraResults != null && extraResults.size() > 0) {
                 mHandler.updateFooter(String.format(mContext.getString(R.string.load_more_messages_fmt), maxResults));
             } else {
-                mHandler.updateFooter("");
+                mHandler.updateFooter(null);
             }
             mFragmentListener.setMessageListProgress(Window.PROGRESS_END);
 
@@ -2028,10 +2032,8 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
                     .append(beforePreviewText);
 
             if (mPreviewLines > 0) {
-                String preview = cursor.getString(PREVIEW_COLUMN);
-                if (preview != null) {
-                    messageStringBuilder.append(" ").append(preview);
-                }
+                String preview = getPreview(cursor);
+                messageStringBuilder.append(" ").append(preview);
             }
 
             holder.preview.setText(messageStringBuilder, TextView.BufferType.SPANNABLE);
@@ -2095,6 +2097,25 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
 
             holder.date.setText(displayDate);
         }
+
+        private String getPreview(Cursor cursor) {
+            String previewTypeString = cursor.getString(PREVIEW_TYPE_COLUMN);
+            DatabasePreviewType previewType = DatabasePreviewType.fromDatabaseValue(previewTypeString);
+
+            switch (previewType) {
+                case NONE: {
+                    return "";
+                }
+                case ENCRYPTED: {
+                    return getString(R.string.preview_encrypted);
+                }
+                case TEXT: {
+                    return cursor.getString(PREVIEW_COLUMN);
+                }
+            }
+
+            throw new AssertionError("Unknown preview type: " + previewType);
+        }
     }
 
     class MessageViewHolder implements View.OnClickListener {
@@ -2143,6 +2164,8 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
         if (!mSearch.isManualSearch() && mCurrentFolder != null && mAccount != null) {
             if (mCurrentFolder.loading) {
                 updateFooter(mContext.getString(R.string.status_loading_more));
+            } else if (!mCurrentFolder.moreMessages) {
+                updateFooter(null);
             } else {
                 String message;
                 if (!mCurrentFolder.lastCheckFailed) {
@@ -2170,8 +2193,6 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
 
         if (text != null) {
             holder.main.setText(text);
-        }
-        if (holder.main.getText().length() > 0) {
             holder.main.setVisibility(View.VISIBLE);
         } else {
             holder.main.setVisibility(View.GONE);
@@ -3457,6 +3478,17 @@ public class MessageListFragment extends Fragment implements OnItemClickListener
             }
 
             mFragmentListener.updateMenu();
+        }
+    }
+
+    private void updateMoreMessagesOfCurrentFolder() {
+        if (mFolderName != null) {
+            try {
+                LocalFolder folder = getFolder(mFolderName, mAccount);
+                mCurrentFolder.setMoreMessagesFromFolder(folder);
+            } catch (MessagingException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

@@ -43,7 +43,9 @@ public class GlobalSettings {
                 new V(1, new BooleanSetting(false))
             ));
         s.put("attachmentdefaultpath", Settings.versions(
-                new V(1, new DirectorySetting(Environment.getExternalStorageDirectory().toString()))
+                new V(1, new DirectorySetting(Environment.getExternalStorageDirectory())),
+                new V(41, new DirectorySetting(Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS)))
             ));
         s.put("backgroundOperations", Settings.versions(
                 new V(1, new EnumSetting<K9.BACKGROUND_OPS>(
@@ -268,7 +270,10 @@ public class GlobalSettings {
             ));
         s.put("notificationDuringQuietTimeEnabled", Settings.versions(
                 new V(39, new BooleanSetting(true))
-        ));
+            ));
+        s.put("confirmDiscardMessage", Settings.versions(
+                new V(40, new BooleanSetting(true))
+            ));
 
         SETTINGS = Collections.unmodifiableMap(s);
 
@@ -552,8 +557,8 @@ public class GlobalSettings {
      * A directory on the file system.
      */
     public static class DirectorySetting extends SettingsDescription {
-        public DirectorySetting(String defaultValue) {
-            super(defaultValue);
+        public DirectorySetting(File defaultPath) {
+            super(defaultPath.toString());
         }
 
         @Override

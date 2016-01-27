@@ -5,6 +5,7 @@ import java.util.Locale;
 
 import android.app.Activity;
 import android.app.DialogFragment;
+import android.app.DownloadManager;
 import android.app.Fragment;
 import android.app.FragmentManager;
 import android.app.LoaderManager;
@@ -58,7 +59,6 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
 
     private static final String ARG_REFERENCE = "reference";
 
-    private static final String STATE_MESSAGE_REFERENCE = "reference";
     private static final String STATE_PGP_DATA = "pgpData";
 
     private static final int ACTIVITY_CHOOSE_FOLDER_MOVE = 1;
@@ -85,6 +85,7 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
     private LocalMessage mMessage;
     private MessageCryptoAnnotations messageAnnotations;
     private MessagingController mController;
+    private DownloadManager downloadManager;
     private Handler handler = new Handler();
     private DownloadMessageListener downloadMessageListener = new DownloadMessageListener();
     private MessageCryptoHelper messageCryptoHelper;
@@ -132,7 +133,9 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
         // This fragments adds options to the action bar
         setHasOptionsMenu(true);
 
-        mController = MessagingController.getInstance(getActivity().getApplication());
+        Context context = getActivity().getApplicationContext();
+        mController = MessagingController.getInstance(context);
+        downloadManager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
         mInitialized = true;
     }
 
@@ -171,42 +174,38 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
 
-        MessageReference messageReference;
+        initializePgpData(savedInstanceState);
+
+        Bundle arguments = getArguments();
+        MessageReference messageReference = arguments.getParcelable(ARG_REFERENCE);
+
+        displayMessage(messageReference);
+    }
+
+    private void initializePgpData(Bundle savedInstanceState) {
         if (savedInstanceState != null) {
             mPgpData = (PgpData) savedInstanceState.get(STATE_PGP_DATA);
-            messageReference = (MessageReference) savedInstanceState.get(STATE_MESSAGE_REFERENCE);
         } else {
-            Bundle args = getArguments();
-            messageReference = args.getParcelable(ARG_REFERENCE);
+            mPgpData = new PgpData();
         }
-
-        displayMessage(messageReference, (mPgpData == null));
     }
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-        outState.putParcelable(STATE_MESSAGE_REFERENCE, mMessageReference);
         outState.putSerializable(STATE_PGP_DATA, mPgpData);
     }
 
-    private void displayMessage(MessageReference ref, boolean resetPgpData) {
-        mMessageReference = ref;
+    private void displayMessage(MessageReference messageReference) {
+        mMessageReference = messageReference;
         if (K9.DEBUG) {
             Log.d(K9.LOG_TAG, "MessageView displaying message " + mMessageReference);
         }
 
-        Context appContext = getActivity().getApplicationContext();
+        Activity activity = getActivity();
+        Context appContext = activity.getApplicationContext();
         mAccount = Preferences.getPreferences(appContext).getAccount(mMessageReference.getAccountUuid());
-        messageCryptoHelper = new MessageCryptoHelper(getActivity(), mAccount, this);
-        if (resetPgpData) {
-            // start with fresh, empty PGP data
-            mPgpData = new PgpData();
-        }
-
-        // Clear previous message
-        mMessageView.resetView();
-        mMessageView.resetHeaderView();
+        messageCryptoHelper = new MessageCryptoHelper(activity, mAccount, this);
 
         startLoadingMessageFromDatabase();
 
@@ -272,14 +271,14 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
         getLoaderManager().initLoader(DECODE_MESSAGE_LOADER_ID, null, decodeMessageLoaderCallback);
     }
 
-    private void onDecodeMessageFinished(MessageViewInfo messageContainer) {
-        this.messageViewInfo = messageContainer;
-        showMessage(messageContainer);
+    private void onDecodeMessageFinished(MessageViewInfo messageViewInfo) {
+        this.messageViewInfo = messageViewInfo;
+        showMessage(messageViewInfo);
     }
 
-    private void showMessage(MessageViewInfo messageContainer) {
+    private void showMessage(MessageViewInfo messageViewInfo) {
         try {
-            mMessageView.setMessage(mAccount, messageContainer);
+            mMessageView.setMessage(mAccount, messageViewInfo);
             mMessageView.setShowDownloadButton(mMessage);
         } catch (MessagingException e) {
             Log.e(K9.LOG_TAG, "Error while trying to display message", e);
@@ -751,9 +750,9 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
         }
 
         @Override
-        public void onLoadFinished(Loader<MessageViewInfo> loader, MessageViewInfo messageContainer) {
+        public void onLoadFinished(Loader<MessageViewInfo> loader, MessageViewInfo messageViewInfo) {
             setProgress(false);
-            onDecodeMessageFinished(messageContainer);
+            onDecodeMessageFinished(messageViewInfo);
         }
 
         @Override
@@ -796,7 +795,7 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
     }
 
     private AttachmentController getAttachmentController(AttachmentViewInfo attachment) {
-        return new AttachmentController(mController, this, attachment);
+        return new AttachmentController(mController, downloadManager, this, attachment);
     }
 
     private class DownloadMessageListener extends MessagingListener {
@@ -805,7 +804,9 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
             handler.post(new Runnable() {
                 @Override
                 public void run() {
-                    onMessageDownloadFinished(message);
+                    if (isAdded()) {
+                        onMessageDownloadFinished(message);
+                    }
                 }
             });
         }
@@ -815,7 +816,9 @@ public class MessageViewFragment extends Fragment implements ConfirmationDialogF
             handler.post(new Runnable() {
                 @Override
                 public void run() {
-                    onDownloadMessageFailed(t);
+                    if (isAdded()) {
+                        onDownloadMessageFailed(t);
+                    }
                 }
             });
         }

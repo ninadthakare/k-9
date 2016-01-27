@@ -16,10 +16,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.os.Debug;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -160,14 +158,10 @@ public class K9 extends Application {
      */
     private static SharedPreferences sDatabaseVersionCache;
 
-    /**
-     * {@code true} if this is a debuggable build.
-     */
-    private static boolean sIsDebuggable;
-
     private static boolean mAnimations = true;
 
     private static boolean mConfirmDelete = false;
+    private static boolean mConfirmDiscardMessage = true;
     private static boolean mConfirmDeleteStarred = false;
     private static boolean mConfirmSpam = false;
     private static boolean mConfirmDeleteFromNotification = true;
@@ -310,31 +304,6 @@ public class K9 extends Application {
     public static final int MAIL_SERVICE_WAKE_LOCK_TIMEOUT = 60000;
 
     public static final int BOOT_RECEIVER_WAKE_LOCK_TIMEOUT = 60000;
-
-    /**
-     * Time the LED is on/off when blinking on new email notification
-     */
-    public static final int NOTIFICATION_LED_ON_TIME = 500;
-    public static final int NOTIFICATION_LED_OFF_TIME = 2000;
-
-    public static final boolean NOTIFICATION_LED_WHILE_SYNCING = false;
-    public static final int NOTIFICATION_LED_FAST_ON_TIME = 100;
-    public static final int NOTIFICATION_LED_FAST_OFF_TIME = 100;
-
-
-    public static final int NOTIFICATION_LED_BLINK_SLOW = 0;
-    public static final int NOTIFICATION_LED_BLINK_FAST = 1;
-
-
-
-    public static final int NOTIFICATION_LED_FAILURE_COLOR = 0xffff0000;
-
-    // Must not conflict with an account number
-    public static final int FETCHING_EMAIL_NOTIFICATION      = -5000;
-    public static final int SEND_FAILED_NOTIFICATION      = -1500;
-    public static final int CERTIFICATE_EXCEPTION_NOTIFICATION_INCOMING = -2000;
-    public static final int CERTIFICATE_EXCEPTION_NOTIFICATION_OUTGOING = -2500;
-    public static final int CONNECTIVITY_ID = -3;
 
 
     public static class Intents {
@@ -506,6 +475,7 @@ public class K9 extends Application {
         editor.putBoolean("fixedMessageViewTheme", useFixedMessageTheme);
 
         editor.putBoolean("confirmDelete", mConfirmDelete);
+        editor.putBoolean("confirmDiscardMessage", mConfirmDiscardMessage);
         editor.putBoolean("confirmDeleteStarred", mConfirmDeleteStarred);
         editor.putBoolean("confirmSpam", mConfirmSpam);
         editor.putBoolean("confirmDeleteFromNotification", mConfirmDeleteFromNotification);
@@ -543,7 +513,6 @@ public class K9 extends Application {
         super.onCreate();
         app = this;
 
-        sIsDebuggable = ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
         K9MailLib.setDebugStatus(new K9MailLib.DebugStatus() {
             @Override public boolean enabled() {
                 return DEBUG;
@@ -687,12 +656,7 @@ public class K9 extends Application {
      */
     public static void loadPrefs(Preferences prefs) {
         SharedPreferences sprefs = prefs.getPreferences();
-        DEBUG = sprefs.getBoolean("enableDebugLogging", false);
-        if (!DEBUG && sIsDebuggable && Debug.isDebuggerConnected()) {
-            // If the debugger is attached, we're probably (surprise surprise) debugging something.
-            DEBUG = true;
-            Log.i(K9.LOG_TAG, "Debugger attached; enabling debug logging.");
-        }
+        DEBUG = sprefs.getBoolean("enableDebugLogging", BuildConfig.DEVELOPER_MODE);
         DEBUG_SENSITIVE = sprefs.getBoolean("enableSensitiveLogging", false);
         mAnimations = sprefs.getBoolean("animations", true);
         mGesturesEnabled = sprefs.getBoolean("gesturesEnabled", false);
@@ -727,6 +691,7 @@ public class K9 extends Application {
         mHideTimeZone = sprefs.getBoolean("hideTimeZone", false);
 
         mConfirmDelete = sprefs.getBoolean("confirmDelete", false);
+        mConfirmDiscardMessage = sprefs.getBoolean("confirmDiscardMessage", true);
         mConfirmDeleteStarred = sprefs.getBoolean("confirmDeleteStarred", false);
         mConfirmSpam = sprefs.getBoolean("confirmSpam", false);
         mConfirmDeleteFromNotification = sprefs.getBoolean("confirmDeleteFromNotification", true);
@@ -766,7 +731,8 @@ public class K9 extends Application {
             sSplitViewMode = SplitViewMode.valueOf(splitViewMode);
         }
 
-        mAttachmentDefaultPath = sprefs.getString("attachmentdefaultpath",  Environment.getExternalStorageDirectory().toString());
+        mAttachmentDefaultPath = sprefs.getString("attachmentdefaultpath",
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString());
         sUseBackgroundAsUnreadIndicator = sprefs.getBoolean("useBackgroundAsUnreadIndicator", true);
         sThreadedViewEnabled = sprefs.getBoolean("threadedView", true);
         fontSizes.load(sprefs);
@@ -1193,8 +1159,16 @@ public class K9 extends Application {
         return mConfirmSpam;
     }
 
+    public static boolean confirmDiscardMessage() {
+        return mConfirmDiscardMessage;
+    }
+
     public static void setConfirmSpam(final boolean confirm) {
         mConfirmSpam = confirm;
+    }
+
+    public static void setConfirmDiscardMessage(final boolean confirm) {
+        mConfirmDiscardMessage = confirm;
     }
 
     public static boolean confirmDeleteFromNotification() {

@@ -52,8 +52,6 @@
         <attr name="messageViewAttachmentBackground" format="reference"/>
         <attr name="messageComposeAddContactImage" format="reference"/>
         <attr name="composerBackgroundColor" format="color"/>
-        <attr name="compatDividerVertical" format="reference"/>
-        <attr name="compatSelectableItemBackground" format="reference"/>
         <attr name="contactPictureFallbackDefaultBackgroundColor" format="reference|color"/>
     </declare-styleable>
 
@@ -64,6 +62,13 @@
     <declare-styleable name="FoldableLinearLayout">
         <attr name="foldedLabel" format="string" />
         <attr name="unFoldedLabel" format="string" />
+    </declare-styleable>
+
+    <declare-styleable name="LinearViewAnimator">
+        <attr name="downInAnimation" format="reference" />
+        <attr name="downOutAnimation" format="reference" />
+        <attr name="upInAnimation" format="reference" />
+        <attr name="upOutAnimation" format="reference" />
     </declare-styleable>
 
 </resources>

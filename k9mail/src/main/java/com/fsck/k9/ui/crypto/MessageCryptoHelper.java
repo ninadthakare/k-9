@@ -19,11 +19,9 @@ import android.os.AsyncTask;
 import android.util.Log;
 
 import com.fsck.k9.Account;
-import com.fsck.k9.Identity;
 import com.fsck.k9.K9;
+import com.fsck.k9.R;
 import com.fsck.k9.crypto.MessageDecryptVerifier;
-import com.fsck.k9.crypto.OpenPgpApiHelper;
-import com.fsck.k9.helper.IdentityHelper;
 import com.fsck.k9.mail.Body;
 import com.fsck.k9.mail.BodyPart;
 import com.fsck.k9.mail.MessagingException;
@@ -38,6 +36,8 @@ import com.fsck.k9.mailstore.MessageHelper;
 import com.fsck.k9.mailstore.OpenPgpResultAnnotation;
 import com.fsck.k9.mailstore.OpenPgpResultAnnotation.CryptoError;
 import org.openintents.openpgp.IOpenPgpService;
+import org.openintents.openpgp.IOpenPgpService2;
+import org.openintents.openpgp.OpenPgpDecryptionResult;
 import org.openintents.openpgp.OpenPgpError;
 import org.openintents.openpgp.OpenPgpSignatureResult;
 import org.openintents.openpgp.util.OpenPgpApi;
@@ -64,6 +64,7 @@ public class MessageCryptoHelper {
     private Intent currentCryptoResult;
 
     private MessageCryptoAnnotations messageAnnotations;
+    private Intent userInteractionResultIntent;
 
 
     public MessageCryptoHelper(Activity activity, Account account, MessageCryptoCallback callback) {
@@ -149,7 +150,7 @@ public class MessageCryptoHelper {
         new OpenPgpServiceConnection(context, openPgpProvider,
                 new OnBound() {
                     @Override
-                    public void onBound(IOpenPgpService service) {
+                    public void onBound(IOpenPgpService2 service) {
                         openPgpApi = new OpenPgpApi(context, service);
 
                         decryptOrVerifyNextPart();
@@ -164,7 +165,12 @@ public class MessageCryptoHelper {
 
     private void decryptOrVerifyPart(CryptoPart cryptoPart) {
         currentCryptoPart = cryptoPart;
-        decryptVerify(new Intent());
+        Intent decryptIntent = userInteractionResultIntent;
+        userInteractionResultIntent = null;
+        if (decryptIntent == null) {
+            decryptIntent = new Intent();
+        }
+        decryptVerify(decryptIntent);
     }
 
     private void decryptVerify(Intent intent) {
@@ -399,24 +405,16 @@ public class MessageCryptoHelper {
     }
 
     private void handleCryptoOperationSuccess(MimeBodyPart outputPart) {
-        OpenPgpResultAnnotation resultAnnotation = new OpenPgpResultAnnotation();
-
-        resultAnnotation.setOutputData(outputPart);
-
-        int resultType = currentCryptoResult.getIntExtra(OpenPgpApi.RESULT_TYPE,
-                OpenPgpApi.RESULT_TYPE_UNENCRYPTED_UNSIGNED);
-        if ((resultType & OpenPgpApi.RESULT_TYPE_ENCRYPTED) == OpenPgpApi.RESULT_TYPE_ENCRYPTED) {
-            resultAnnotation.setWasEncrypted(true);
-        } else {
-            resultAnnotation.setWasEncrypted(false);
-        }
-        if ((resultType & OpenPgpApi.RESULT_TYPE_SIGNED) == OpenPgpApi.RESULT_TYPE_SIGNED) {
-            OpenPgpSignatureResult signatureResult =
-                    currentCryptoResult.getParcelableExtra(OpenPgpApi.RESULT_SIGNATURE);
-            resultAnnotation.setSignatureResult(signatureResult);
-        }
-
+        OpenPgpDecryptionResult decryptionResult =
+                currentCryptoResult.getParcelableExtra(OpenPgpApi.RESULT_DECRYPTION);
+        OpenPgpSignatureResult signatureResult =
+                currentCryptoResult.getParcelableExtra(OpenPgpApi.RESULT_SIGNATURE);
         PendingIntent pendingIntent = currentCryptoResult.getParcelableExtra(OpenPgpApi.RESULT_INTENT);
+
+        OpenPgpResultAnnotation resultAnnotation = new OpenPgpResultAnnotation();
+        resultAnnotation.setOutputData(outputPart);
+        resultAnnotation.setDecryptionResult(decryptionResult);
+        resultAnnotation.setSignatureResult(signatureResult);
         resultAnnotation.setPendingIntent(pendingIntent);
 
         onCryptoSuccess(resultAnnotation);
@@ -428,10 +426,10 @@ public class MessageCryptoHelper {
         }
 
         if (resultCode == Activity.RESULT_OK) {
+            userInteractionResultIntent = data;
             decryptOrVerifyNextPart();
         } else {
-            // FIXME: don't pass null
-            onCryptoFailed(null);
+            onCryptoFailed(new OpenPgpError(OpenPgpError.CLIENT_SIDE_ERROR, context.getString(R.string.openpgp_canceled_by_user)));
         }
     }
 
